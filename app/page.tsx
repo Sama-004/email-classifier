@@ -15,6 +15,7 @@ export default function Home() {
       } else {
         setStatus("Error: " + data.error);
       }
+      getSavedEmails();
     } catch (error) {
       setStatus("Failed to fetch emails");
     }

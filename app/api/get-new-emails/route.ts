@@ -3,7 +3,6 @@ import { emails } from "@/db/schema";
 import { db } from "@/db";
 import Imap from "node-imap";
 import { simpleParser } from "mailparser";
-import { eq } from "drizzle-orm";
 import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -47,16 +46,22 @@ async function categorizeEmail(content: string): Promise<string> {
 async function applyGmailLabel(
   imap: Imap,
   uid: number,
-  label: string
+  category: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Ensure label exists first (Gmail requires this)
-    imap.addBox(label, (boxErr) => {
-      // Ignore error if box already exists
-      imap.addFlags(uid, [`\\${label}`], (err) => {
-        if (err) {
-          reject(err);
+    const boxName = `${category.replace(/\s+/g, "_")}`;
+    imap.addBox(boxName, (boxErr) => {
+      if (boxErr && boxErr.textCode !== "ALREADYEXISTS") {
+        console.error("Error creating box:", boxErr);
+        reject(boxErr);
+        return;
+      }
+      imap.copy([uid], boxName, (copyErr) => {
+        if (copyErr) {
+          console.error("Error copying message:", copyErr);
+          reject(copyErr);
         } else {
+          console.log(`Successfully categorized message to ${boxName}`);
           resolve();
         }
       });
@@ -93,9 +98,13 @@ function processEmail(stream: any, imap: Imap, uid: number): Promise<boolean> {
         // Apply Gmail label
         try {
           await applyGmailLabel(imap, uid, category);
+          console.log(
+            `[${new Date().toISOString()}] Applied label "${category}" to email "${
+              parsed.subject
+            }" (UID: ${uid})`
+          );
         } catch (labelError) {
           console.error("Error applying label:", labelError);
-          // Continue even if label application fails
         }
         console.log(
           `[${new Date().toISOString()}] Processed: Email "${
